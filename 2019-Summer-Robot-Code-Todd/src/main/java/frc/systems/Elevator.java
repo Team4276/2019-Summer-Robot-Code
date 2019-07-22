@@ -1,25 +1,13 @@
 package frc.systems;
 
 import frc.robot.Robot;
-import edu.wpi.first.wpilibj.VictorSP;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import edu.wpi.first.wpilibj.Encoder;
-import edu.wpi.first.wpilibj.Joystick;
-import edu.wpi.first.wpilibj.Notifier;
-
-import com.ctre.phoenix.motorcontrol.ControlMode;
-import com.ctre.phoenix.motorcontrol.NeutralMode;
-import com.ctre.phoenix.motorcontrol.can.VictorSPX;
-
-import edu.wpi.first.wpilibj.DoubleSolenoid;
-
-import frc.utilities.Constants;
-import com.ctre.phoenix.motorcontrol.ControlMode;
-import com.ctre.phoenix.motorcontrol.can.TalonSRX;
-import com.ctre.phoenix.motorcontrol.can.VictorSPX;
 import edu.wpi.first.wpilibj.Timer;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.Robot;
+
+import com.ctre.phoenix.motorcontrol.ControlMode;
+import com.ctre.phoenix.motorcontrol.can.VictorSPX;
+import com.ctre.phoenix.motorcontrol.can.TalonSRX;
+
 import frc.utilities.Xbox;
 import frc.utilities.Toggler;
 
@@ -48,20 +36,31 @@ public class Elevator extends Thread implements Runnable {
 	// Constants - General
 	public final double STARTING_HEIGHT = 0; // ft
 	public final double SETPOINT_PREP = 2; // ft
-	public final double SETPOINT_SCALE = 5.75; // ft
-	public final double SETPOINT_SWITCH = 3; // ft
-	public final double SETPOINT_BOTTOM = 0; // ft
+	public final double SETPOINT_BOTTOM = 5.75; // ft
+
+	// Constants - Cargo Placement
+	public final double SETPOINT_ROCKET_TOP_CARGO = 5.75; // ft
+	public final double SETPOINT_ROCKET_MIDDLE_CARGO = 3; // ft
+	public final double SETPOINT_ROCKET_BOTTOM_CARGO = 0; // ft
+	public final double SETPOINT_SHIP_CARGO = 0; // ft
+
+	// Constants - Hatch Placement
+	public final double SETPOINT_ROCKET_TOP_HATCH = 5.75; // ft
+	public final double SETPOINT_ROCKET_MIDDLE_HATCH = 3; // ft
+	public final double SETPOINT_ROCKET_BOTTOM_HATCH = 0; // ft
+
 	private final double SETPOINT_INCREMENT = .1; // ft
 	private final double OVERRIDE_INCREMENT = 0.3; // 30%
 	private final double HEIGHT_PER_PULSE = (-1.562 * 1e-4); // (1/6400)
-	private final double MAX_POWER_UP = 0.7;
+
+	private final double MAX_POWER_UP = 0.4;
 	private final double MAX_POWER_DOWN = 0.275;
+
 	private final double HEIGHT_THRESHOLD = 2; // ft
 	private final double HEIGHT_COAST_RATE = 1; // ft/s
 
 	// General parameters
 	private boolean manualOverrideIsEngaged;
-	private boolean isClimbing = false;
 	private double encoderOffset = 0;
 	private double estimatedHeight = 0;
 	public double commandedHeight = STARTING_HEIGHT;
@@ -76,6 +75,7 @@ public class Elevator extends Thread implements Runnable {
 	private double heightErrorLast = 0;
 	private double accumulatedError = 0;
 	private double rateError = 0;
+
 	private double timeNow;
 	private double timePrevious;
 	private double timeStep;
@@ -111,19 +111,49 @@ public class Elevator extends Thread implements Runnable {
 	}
 
 	private void determineSetpoint() {
+
+		// button X(Manipulator to Bottom)
+		if (Robot.xboxJoystick.getRawButton(Xbox.POVleft)) {
+			commandedHeight = SETPOINT_BOTTOM;
+		}
+
+		// Setpoints for Cargo
+
 		// button Y(Deposit Cube in Scale)
 		if (Robot.xboxJoystick.getRawButton(Xbox.Y)) {
-			commandedHeight = SETPOINT_SCALE;
+			commandedHeight = SETPOINT_ROCKET_TOP_CARGO;
 		}
 
 		// button A(Deposit Cube in Switch)
 		if (Robot.xboxJoystick.getRawButton(Xbox.B)) {
-			commandedHeight = SETPOINT_SWITCH;
+			commandedHeight = SETPOINT_ROCKET_MIDDLE_CARGO;
 		}
 
 		// button B(Manipulator to Bottom)
 		if (Robot.xboxJoystick.getRawButton(Xbox.A)) {
-			commandedHeight = SETPOINT_BOTTOM;
+			commandedHeight = SETPOINT_ROCKET_BOTTOM_CARGO;
+		}
+
+		// button B(Manipulator to Bottom)
+		if (Robot.xboxJoystick.getRawButton(Xbox.X)) {
+			commandedHeight = SETPOINT_SHIP_CARGO;
+		}
+
+		// Setpoints for Hatch
+
+		// button Y(Deposit Cube in Scale)
+		if (Robot.xboxJoystick.getPOV(Xbox.DPad) == Xbox.POVdown) {
+			commandedHeight = SETPOINT_ROCKET_TOP_HATCH;
+		}
+
+		// button A(Deposit Cube in Switch)
+		if (Robot.xboxJoystick.getRawButton(Xbox.POVright)) {
+			commandedHeight = SETPOINT_ROCKET_MIDDLE_HATCH;
+		}
+
+		// button B(Manipulator to Bottom)
+		if (Robot.xboxJoystick.getRawButton(Xbox.POVdown)) {
+			commandedHeight = SETPOINT_ROCKET_BOTTOM_HATCH;
 		}
 
 		// Right Axis Y (Manually Change Setpoint)
@@ -198,30 +228,30 @@ public class Elevator extends Thread implements Runnable {
 			commandedPower = -maxClimbPower;
 		}
 	}
-/*
+
 	private void tuneControlGains() {
-		if (Robot.logitechJoystickL.getRawButton(5) == true) {
+		if (Robot.leftJoystick.getRawButton(5) == true) {
 			STATIC_GAIN_LOWER = STATIC_GAIN_LOWER + 10e-3;
 		}
-		if (Robot.logitechJoystickL.getRawButton(3) == true) {
+		if (Robot.leftJoystick.getRawButton(3) == true) {
 			STATIC_GAIN_LOWER = STATIC_GAIN_LOWER - 10e-3;
 		}
-		if (Robot.logitechJoystickL.getRawButton(7) == true) {
+		if (Robot.leftJoystick.getRawButton(7) == true) {
 			KP_LOWER = KP_LOWER + 10e-3;
 		}
-		if (Robot.logitechJoystickL.getRawButton(8) == true) {
+		if (Robot.leftJoystick.getRawButton(8) == true) {
 			KP_LOWER = KP_LOWER - 10e-3;
 		}
-		if (Robot.logitechJoystickL.getRawButton(9) == true) {
+		if (Robot.leftJoystick.getRawButton(9) == true) {
 			KI_LOWER = KI_LOWER + 1e-3;
 		}
-		if (Robot.logitechJoystickL.getRawButton(10) == true) {
+		if (Robot.leftJoystick.getRawButton(10) == true) {
 			KI_LOWER = KI_LOWER - 1e-3;
 		}
-		if (Robot.logitechJoystickL.getRawButton(11) == true) {
+		if (Robot.leftJoystick.getRawButton(11) == true) {
 			KD_LOWER = KD_LOWER + 1e-3;
 		}
-		if (Robot.logitechJoystickL.getRawButton(12) == true) {
+		if (Robot.leftJoystick.getRawButton(12) == true) {
 			KD_LOWER = KD_LOWER - 1e-3;
 		}
 		SmartDashboard.putNumber("Elevator Lower Kstatic", STATIC_GAIN_LOWER);
@@ -229,28 +259,28 @@ public class Elevator extends Thread implements Runnable {
 		SmartDashboard.putNumber("Elevator Lower Ki*1e-3", KI_LOWER * 1e3);
 		SmartDashboard.putNumber("Elevator Lower Kd*1e-3", KD_LOWER * 1e3);
 
-		if (Robot.logitechJoystickR.getRawButton(5) == true) {
+		if (Robot.rightJoystick.getRawButton(5) == true) {
 			STATIC_GAIN_UPPER = STATIC_GAIN_UPPER + 10e-3;
 		}
-		if (Robot.logitechJoystickR.getRawButton(3) == true) {
+		if (Robot.rightJoystick.getRawButton(3) == true) {
 			STATIC_GAIN_UPPER = STATIC_GAIN_UPPER - 10e-3;
 		}
-		if (Robot.logitechJoystickR.getRawButton(7) == true) {
+		if (Robot.rightJoystick.getRawButton(7) == true) {
 			KP_UPPER = KP_UPPER + 10e-3;
 		}
-		if (Robot.logitechJoystickR.getRawButton(8) == true) {
+		if (Robot.rightJoystick.getRawButton(8) == true) {
 			KP_UPPER = KP_UPPER - 10e-3;
 		}
-		if (Robot.logitechJoystickR.getRawButton(9) == true) {
+		if (Robot.rightJoystick.getRawButton(9) == true) {
 			KI_UPPER = KI_UPPER + 1e-3;
 		}
-		if (Robot.logitechJoystickR.getRawButton(10) == true) {
+		if (Robot.rightJoystick.getRawButton(10) == true) {
 			KI_UPPER = KI_UPPER - 1e-3;
 		}
-		if (Robot.logitechJoystickR.getRawButton(11) == true) {
+		if (Robot.rightJoystick.getRawButton(11) == true) {
 			KD_UPPER = KD_UPPER + 1e-3;
 		}
-		if (Robot.logitechJoystickR.getRawButton(12) == true) {
+		if (Robot.rightJoystick.getRawButton(12) == true) {
 			KD_UPPER = KD_UPPER - 1e-3;
 		}
 		SmartDashboard.putNumber("Elevator Upper Kstatic", STATIC_GAIN_UPPER);
@@ -259,28 +289,6 @@ public class Elevator extends Thread implements Runnable {
 		SmartDashboard.putNumber("Elevator Upper Kd*1e-3", KD_UPPER * 1e3);
 
 		SmartDashboard.putNumber("Elevator power", commandedPower);
-	}
-*/
-	public void updateTelemetry() {
-		SmartDashboard.putNumber("current draw elevator 1", elevatorDriverMainR1.getOutputCurrent());
-		//SmartDashboard.putNumber("current draw elevator 2", elevatorDriverR2.getOutputCurrent());
-		SmartDashboard.putNumber("Commanded arm height", commandedHeight);
-		SmartDashboard.putNumber("Estimated arm height", estimatedHeight);
-		SmartDashboard.putBoolean("Elevator override", manualOverrideIsEngaged);
-		SmartDashboard.putBoolean("Climbing Mode", isClimbing);
-		SmartDashboard.putNumber("Elevator power", commandedPower);
-	}
-
-	public void commandToBottom() {
-		commandedHeight = SETPOINT_BOTTOM;
-	}
-
-	public void commandToSwitch() {
-		commandedHeight = SETPOINT_SWITCH;
-	}
-
-	public void commandToScale() {
-		commandedHeight = SETPOINT_SCALE;
 	}
 
 	public void initializeThread() {
@@ -291,18 +299,15 @@ public class Elevator extends Thread implements Runnable {
 
 	public void performMainProcessing() {
 		while (true) {
-			// tuneControlGains(); // for gain tuning only - COMMENT THIS LINE
-			// OUT
-			// FOR COMPETITION
+			// tuneControlGains(); // for gain tuning only - COMMENT THIS LINE OUT FOR
+			// COMPETITION
 			manualOverrideToggler.updateMechanismState();
 			manualOverrideIsEngaged = manualOverrideToggler.getMechanismState();
 			if (manualOverrideIsEngaged) {
 				computeManualPowerOffset();
-				if (Robot.xboxJoystick.getPOV(Xbox.DPad) == Xbox.POVdown) {
-					isClimbing = true;
+				if (Robot.xboxJoystick.getRawButton(Xbox.RAxis)) {
 					commandedPower = -1;
 				} else {
-					isClimbing = false;
 					commandedPower = staticPower + manualPower;
 				}
 				computeActivePower();
@@ -310,12 +315,9 @@ public class Elevator extends Thread implements Runnable {
 				determineSetpoint();
 				computeStaticPower();
 				computeActivePower();
-				isClimbing = false;
-				commandedPower = staticPower + activePower;
+				commandedPower = staticPower + activePower;				
 			}
-			if (!isClimbing) {
-				limitCommandedPower();
-			}
+			limitCommandedPower();
 			elevatorDriverMainR1.set(ControlMode.PercentOutput, -commandedPower);
 			elevatorDriverR2.set(ControlMode.PercentOutput, -commandedPower);
 			// negative because facing opposite direction
@@ -326,4 +328,15 @@ public class Elevator extends Thread implements Runnable {
 			Timer.delay(0.0625);
 		}
 	}
+
+	public void updateTelemetry() {
+		SmartDashboard.putNumber("current draw elevator 1", elevatorDriverMainR1.getOutputCurrent());
+		// SmartDashboard.putNumber("current draw elevator 2",
+		// elevatorDriverR2.getOutputCurrent());
+		SmartDashboard.putNumber("Commanded arm height", commandedHeight);
+		SmartDashboard.putNumber("Estimated arm height", estimatedHeight);
+		SmartDashboard.putBoolean("Elevator override", manualOverrideIsEngaged);
+		SmartDashboard.putNumber("Elevator power", commandedPower);
+	}
+
 }

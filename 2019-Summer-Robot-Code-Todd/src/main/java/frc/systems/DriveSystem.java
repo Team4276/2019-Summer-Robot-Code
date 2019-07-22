@@ -8,34 +8,23 @@
 package frc.systems;
 
 import frc.robot.Robot;
+
 import edu.wpi.first.wpilibj.VictorSP;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.Encoder;
-import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.Notifier;
+import edu.wpi.first.wpilibj.DoubleSolenoid;
 
 import com.ctre.phoenix.motorcontrol.ControlMode;
 import com.ctre.phoenix.motorcontrol.NeutralMode;
 import com.ctre.phoenix.motorcontrol.can.VictorSPX;
-
-import edu.wpi.first.wpilibj.DoubleSolenoid;
 
 import frc.utilities.Constants;
 import frc.utilities.SoftwareTimer;
 import frc.utilities.Toggler;
 import frc.utilities.LogJoystick;
 
-import jaci.pathfinder.Pathfinder;
-import jaci.pathfinder.PathfinderFRC;
-import jaci.pathfinder.Trajectory;
-import jaci.pathfinder.Waypoint;
-import jaci.pathfinder.modifiers.TankModifier;
-import jaci.pathfinder.followers.EncoderFollower;
-
 public class DriveSystem {
-
-    private EncoderFollower m_left_follower;
-    private EncoderFollower m_right_follower;
 
     private Encoder m_left_encoder;
     private Encoder m_right_encoder;
@@ -43,54 +32,66 @@ public class DriveSystem {
     private boolean hasCANNetwork = false;
 
     DoubleSolenoid gearShifter;
+
     public final int HI_SHIFTER = 4;
     public final int LO_SHIFTER = 3;
+
     SoftwareTimer shiftTimer;
     SoftwareTimer driveTimer;
+
     private boolean shiftInit = true;
     private boolean isShifting = false;
     private boolean isDeploying = false;
-    private Gear currentGear = Gear.HI;
+    private Gear currentGear = Gear.LO;
     private boolean brakeModeisEngaged = true;
     private final DriveMode DEFAULT_MODE = DriveMode.TANK;
     private DriveMode currentMode = DEFAULT_MODE;
-    private String currentMode_s = "Arcade";
+    private String currentMode_s = "Tank";
 
     VictorSP flDrive, mlDrive, blDrive, frDrive, mrDrive, brDrive;
     VictorSPX flDriveX, mlDriveX, blDriveX, frDriveX, mrDriveX, brDriveX;
+
     private double leftPower = 0;
     private double rightPower = 0;
-    private double hatchDeployHiGear = -0.25;
-    private double hatchDeployLoGear = -0.5;
-    private double climbDelayTime = 1.5;// seconds
-    private double driveFDelay = 0.8;
-    private double retractDelayTime = 2;// seconds
-    private double pullupDelayTime = 1;// seconds
-    private double contDelayTime = 1.5;// seconds
-    private double climbPower = .1;// seconds
-    private int timerNum = 0;
+
     double desired_heading = 0;
     int count = 0;
+
     private Toggler modeToggler;
+    private Toggler shiftToggler;
+
     public boolean methodInit = true;
     private Notifier m_follower_notifier;
 
+    private int timerNum = 0;
+
     double deadband = 0.05;
+
+    // Cheesy Drive Constants
+    public static final double kDefaultQuickStopThreshold = 0.2;
+    public static final double kDefaultQuickStopAlpha = 0.1;
+
+    private double m_quickStopThreshold = kDefaultQuickStopThreshold;
+    private double m_quickStopAlpha = kDefaultQuickStopAlpha;
+    private double m_quickStopAccumulator;
 
     public DriveSystem(boolean isCAN, int FLport, int MLport, int BLport, int FRport, int MRport, int BRport,
             int shifterHi, int shifterLo, int m_right_encoderPortA, int m_right_encoderPortB, int m_left_encoderPortA,
             int m_left_encoderPortB) {
 
         modeToggler = new Toggler(LogJoystick.B1);
-        modeToggler.setMechanismState(true); // sets to bracke mode
+        modeToggler.setMechanismState(true); // sets to brake mode
+
+        shiftToggler = new Toggler(LogJoystick.B3);
+        shiftToggler.setMechanismState(true);
 
         shiftTimer = new SoftwareTimer();
         driveTimer = new SoftwareTimer();
         m_right_encoder = new Encoder(m_right_encoderPortA, m_right_encoderPortB);
         m_left_encoder = new Encoder(m_left_encoderPortA, m_left_encoderPortB);
+
         if (isCAN) {
             hasCANNetwork = true;
-
             flDriveX = new VictorSPX(FLport);
             mlDriveX = new VictorSPX(MLport);
             blDriveX = new VictorSPX(BLport);
@@ -99,7 +100,6 @@ public class DriveSystem {
             brDriveX = new VictorSPX(BRport);
         } else {
             hasCANNetwork = false;
-
             flDrive = new VictorSP(FLport);
             mlDrive = new VictorSP(MLport);
             blDrive = new VictorSP(BLport);
@@ -117,6 +117,14 @@ public class DriveSystem {
      * @param rightPow right motor power
      * @param leftPow  left motor power
      */
+
+    public enum Gear {
+        HI, LO
+    }
+
+    public enum DriveMode {
+        TANK, ARCADE, AUTO, CHEESY
+    }
 
     public void assignMotorPower(double rightPow, double leftPow) {
         if (hasCANNetwork) {
@@ -144,6 +152,16 @@ public class DriveSystem {
      * manual operator controlled drive
      */
 
+    protected double limit(double value) {
+        if (value > 1.0) {
+            return 1.0;
+        }
+        if (value < -1.0) {
+            return -1.0;
+        }
+        return value;
+    }
+
     public void operatorDrive() {
 
         changeMode();
@@ -152,8 +170,6 @@ public class DriveSystem {
         if (Robot.rightJoystick.getRawButton(1)) {
             currentMode = DriveMode.AUTO;
 
-        } else if (Robot.rightJoystick.getRawButton(2)) {
-            currentMode = DriveMode.CLIMB;
         } else {
             currentMode = DEFAULT_MODE;
         }
@@ -164,6 +180,8 @@ public class DriveSystem {
             currentMode_s = "Auto";
         } else if (currentMode == DriveMode.ARCADE) {
             currentMode_s = "Arcade";
+        } else if (currentMode == DriveMode.CHEESY) {
+            currentMode_s = "Cheesy";
         } else {
             currentMode_s = "Tank";
         }
@@ -180,7 +198,91 @@ public class DriveSystem {
 
             break;
 
-       
+        case CHEESY:
+
+            resetAuto();
+
+            double xSpeed = 0;
+            double zRotation = 0;
+            double left = 0;
+            double right = 0;
+            boolean isQuickTurn;
+
+            if (Math.abs(Robot.rightJoystick.getY()) > deadband) {
+                xSpeed = -Robot.rightJoystick.getY();
+            }
+            if (Math.abs(Robot.leftJoystick.getX()) > deadband) {
+                zRotation = Math.pow(Robot.leftJoystick.getX(), 3);
+            }
+
+            if (Robot.rightJoystick.getRawButton(5)) {
+                isQuickTurn = true;
+            } else {
+                isQuickTurn = false;
+            }
+
+            xSpeed = limit(xSpeed);
+
+            zRotation = limit(zRotation);
+
+            double angularPower;
+            boolean overPower;
+
+            if (isQuickTurn) {
+                if (Math.abs(xSpeed) < m_quickStopThreshold) {
+                    m_quickStopAccumulator = (1 - m_quickStopAlpha) * m_quickStopAccumulator
+                            + m_quickStopAlpha * limit(zRotation) * 2;
+                }
+                overPower = true;
+                angularPower = zRotation;
+            } else {
+                overPower = false;
+                angularPower = Math.abs(xSpeed) * zRotation - m_quickStopAccumulator;
+
+                if (m_quickStopAccumulator > 1) {
+                    m_quickStopAccumulator -= 1;
+                } else if (m_quickStopAccumulator < -1) {
+                    m_quickStopAccumulator += 1;
+                } else {
+                    m_quickStopAccumulator = 0.0;
+                }
+            }
+
+            left = xSpeed + angularPower;
+            right = xSpeed - angularPower;
+
+            // If rotation is overpowered, reduce both outputs to within acceptable range
+            if (overPower) {
+                if (left > 1.0) {
+                    right -= left - 1.0;
+                    left = 1.0;
+                } else if (right > 1.0) {
+                    left -= right - 1.0;
+                    right = 1.0;
+                } else if (left < -1.0) {
+                    right -= left + 1.0;
+                    left = -1.0;
+                } else if (right < -1.0) {
+                    left -= right + 1.0;
+                    right = -1.0;
+                }
+            }
+
+            // Normalize the wheel speeds
+            double maxMagnitude = Math.max(Math.abs(left), Math.abs(right));
+            if (maxMagnitude > 1.0) {
+                left /= maxMagnitude;
+                right /= maxMagnitude;
+
+            }
+            if (!isShifting) {
+                assignMotorPower(right, left);
+            } else {
+
+                assignMotorPower(0, 0);
+            }
+
+            break;
 
         case ARCADE:
             resetAuto();
@@ -227,6 +329,7 @@ public class DriveSystem {
         }
 
         updateTelemetry();
+
     }
 
     /**
@@ -234,8 +337,20 @@ public class DriveSystem {
      * power drive motors while shifting
      */
     public void checkForGearShift() {
-        boolean shiftHi = Robot.leftJoystick.getRawButton(HI_SHIFTER);
-        boolean shiftLo = Robot.leftJoystick.getRawButton(LO_SHIFTER);
+        boolean shiftHi;// = Robot.leftJoystick.getRawButton(HI_SHIFTER);
+        boolean shiftLo;// = Robot.leftJoystick.getRawButton(LO_SHIFTER);
+        boolean isHi;
+
+        shiftToggler.updateMechanismStateLJoy();
+        isHi = shiftToggler.getMechanismState();
+
+        if (isHi) {
+            shiftHi = true;
+            shiftLo = false;
+        } else {
+            shiftLo = true;
+            shiftHi = false;
+        }
 
         if (shiftHi) {
             currentGear = Gear.HI;
@@ -272,14 +387,6 @@ public class DriveSystem {
     /**
      * current gear status
      */
-
-    public enum Gear {
-        HI, LO
-    }
-
-    public enum DriveMode {
-        TANK, ARCADE, AUTO, CLIMB
-    }
 
     /**
      * 
@@ -348,6 +455,87 @@ public class DriveSystem {
 
     }
 
+    /*
+     * CHEESY DRIVE TESTING private static final double kThrottleDeadband = 0.02;
+     * private static final double kWheelDeadband = 0.02;
+     * 
+     * // These factor determine how fast the wheel traverses the "non linear" sine
+     * // curve. private static final double kHighWheelNonLinearity = 0.65; private
+     * static final double kLowWheelNonLinearity = 0.5;
+     * 
+     * private static final double kHighNegInertiaScalar = 4.0;
+     * 
+     * private static final double kLowNegInertiaThreshold = 0.65; private static
+     * final double kLowNegInertiaTurnScalar = 3.5; private static final double
+     * kLowNegInertiaCloseScalar = 4.0; private static final double
+     * kLowNegInertiaFarScalar = 5.0;
+     * 
+     * private static final double kHighSensitivity = 0.65; private static final
+     * double kLowSensitiity = 0.65;
+     * 
+     * private static final double kQuickStopDeadband = 0.5; private static final
+     * double kQuickStopWeight = 0.1; private static final double kQuickStopScalar =
+     * 5.0;
+     * 
+     * private double mOldWheel = 0.0; private double mQuickStopAccumlator = 0.0;
+     * private double mNegInertiaAccumlator = 0.0;
+     * 
+     * public void testCheesy(double throttle, double wheel, boolean isQuickTurn,
+     * boolean isHighGear) {
+     * 
+     * double negInertia = wheel - mOldWheel; mOldWheel = wheel;
+     * 
+     * double wheelNonLinearity; if (isHighGear) { wheelNonLinearity =
+     * kHighWheelNonLinearity; final double denominator = Math.sin(Math.PI / 2.0 *
+     * wheelNonLinearity); // Apply a sin function that's scaled to make it feel
+     * better. wheel = Math.sin(Math.PI / 2.0 * wheelNonLinearity * wheel) /
+     * denominator; wheel = Math.sin(Math.PI / 2.0 * wheelNonLinearity * wheel) /
+     * denominator; } else { wheelNonLinearity = kLowWheelNonLinearity; final double
+     * denominator = Math.sin(Math.PI / 2.0 * wheelNonLinearity); // Apply a sin
+     * function that's scaled to make it feel better. wheel = Math.sin(Math.PI / 2.0
+     * * wheelNonLinearity * wheel) / denominator; wheel = Math.sin(Math.PI / 2.0 *
+     * wheelNonLinearity * wheel) / denominator; wheel = Math.sin(Math.PI / 2.0 *
+     * wheelNonLinearity * wheel) / denominator; }
+     * 
+     * double leftPwm, rightPwm, overPower; double sensitivity;
+     * 
+     * double angularPower; double linearPower;
+     * 
+     * // Negative inertia! double negInertiaScalar; if (isHighGear) {
+     * negInertiaScalar = kHighNegInertiaScalar; sensitivity = kHighSensitivity; }
+     * else { if (wheel * negInertia > 0) { // If we are moving away from 0.0, aka,
+     * trying to get more wheel. negInertiaScalar = kLowNegInertiaTurnScalar; } else
+     * { // Otherwise, we are attempting to go back to 0.0. if (Math.abs(wheel) >
+     * kLowNegInertiaThreshold) { negInertiaScalar = kLowNegInertiaFarScalar; } else
+     * { negInertiaScalar = kLowNegInertiaCloseScalar; } } sensitivity =
+     * kLowSensitiity; } double negInertiaPower = negInertia * negInertiaScalar;
+     * mNegInertiaAccumlator += negInertiaPower;
+     * 
+     * wheel = wheel + mNegInertiaAccumlator; if (mNegInertiaAccumlator > 1) {
+     * mNegInertiaAccumlator -= 1; } else if (mNegInertiaAccumlator < -1) {
+     * mNegInertiaAccumlator += 1; } else { mNegInertiaAccumlator = 0; } linearPower
+     * = throttle;
+     * 
+     * // Quickturn! if (isQuickTurn) { if (Math.abs(linearPower) <
+     * kQuickStopDeadband) { double alpha = kQuickStopWeight; mQuickStopAccumlator =
+     * (1 - alpha) * mQuickStopAccumlator + alpha * Math.min(1.0, Math.max(wheel,
+     * -1.0)) * kQuickStopScalar; } overPower = 1.0; angularPower = wheel; } else {
+     * overPower = 0.0; angularPower = Math.abs(throttle) * wheel * sensitivity -
+     * mQuickStopAccumlator; if (mQuickStopAccumlator > 1) { mQuickStopAccumlator -=
+     * 1; } else if (mQuickStopAccumlator < -1) { mQuickStopAccumlator += 1; } else
+     * { mQuickStopAccumlator = 0.0; } }
+     * 
+     * rightPwm = leftPwm = linearPower; leftPwm += angularPower; rightPwm -=
+     * angularPower;
+     * 
+     * if (leftPwm > 1.0) { rightPwm -= overPower * (leftPwm - 1.0); leftPwm = 1.0;
+     * } else if (rightPwm > 1.0) { leftPwm -= overPower * (rightPwm - 1.0);
+     * rightPwm = 1.0; } else if (leftPwm < -1.0) { rightPwm += overPower * (-1.0 -
+     * leftPwm); leftPwm = -1.0; } else if (rightPwm < -1.0) { leftPwm += overPower
+     * * (-1.0 - rightPwm); rightPwm = -1.0; }
+     * 
+     * }
+     */
     /**
      * 
      * @param targetTime      distance to travel
@@ -440,78 +628,6 @@ public class DriveSystem {
         assignMotorPower(-linear * rightbias - turn - manTurn, linear * leftbias - turn - manTurn);
 
         return false;
-    }
-
-    public boolean drivePath(String pathFileName) {
-
-        Trajectory left_trajectory = PathfinderFRC.getTrajectory(pathFileName + ".right");
-        Trajectory right_trajectory = PathfinderFRC.getTrajectory(pathFileName + ".left");
-
-        m_left_follower = new EncoderFollower(left_trajectory);
-        m_right_follower = new EncoderFollower(right_trajectory);
-
-        m_left_follower.configureEncoder(m_left_encoder.get(), Constants.TickPRev, Constants.wheelDiam);
-        // You must tune the PID values on the following line!
-        m_left_follower.configurePIDVA(Constants.kP, Constants.kI, Constants.kD, Constants.kV, Constants.kA);
-
-        m_right_follower.configureEncoder(m_right_encoder.get(), Constants.TickPRev, Constants.wheelDiam);
-        // You must tune the PID values on the following line!
-        m_right_follower.configurePIDVA(Constants.kP, Constants.kI, Constants.kD, Constants.kV, Constants.kA);
-
-        m_follower_notifier = new Notifier(this::followPath);
-        m_follower_notifier.startPeriodic(left_trajectory.get(0).dt);
-
-        return false;
-    }
-
-    private void followPath() {
-        if (m_left_follower.isFinished() || m_right_follower.isFinished()) {
-            m_follower_notifier.stop();
-        } else {
-
-            double LVT = m_left_follower.getSegment().velocity;
-            double RVT = m_right_follower.getSegment().velocity;
-
-            double LVA = m_left_encoder.getRate();
-            double RVA = m_right_encoder.getRate();
-
-            double LPT = m_left_follower.getSegment().position;
-            double RPT = m_right_follower.getSegment().position;
-
-            double LPA = m_left_encoder.getDistance();
-            double RPA = m_right_encoder.getDistance();
-
-            double left_speed = m_left_follower.calculate(m_left_encoder.get());
-            double right_speed = m_right_follower.calculate(m_right_encoder.get());
-            double heading = Robot.mImu.getYaw();
-            double desired_heading = Pathfinder.r2d(m_left_follower.getHeading());
-            double heading_difference = Pathfinder.boundHalfDegrees(desired_heading - heading);
-
-            double turn = 0.8 * (-1.0 / 80.0) * heading_difference;
-
-            SmartDashboard.putNumber("Left goal velocity", LVT);
-            SmartDashboard.putNumber("Right goal velocity", RVT);
-
-            SmartDashboard.putNumber("Left actual velocity", LVA);
-            SmartDashboard.putNumber("Right actual velocity", RVA);
-
-            SmartDashboard.putNumber("Left velocity difference", (LVT - LVA));
-            SmartDashboard.putNumber("Right velocity difference", (RVT - RVA));
-
-            SmartDashboard.putNumber("Left goal position", LPT);
-            SmartDashboard.putNumber("Right goal position", RPT);
-
-            SmartDashboard.putNumber("Left actual position", LPA);
-            SmartDashboard.putNumber("Right actual position", RPA);
-
-            SmartDashboard.putNumber("Left position difference", (LPT - LPA));
-            SmartDashboard.putNumber("Right position difference", (RPT - RPA));
-
-            SmartDashboard.putNumber("heading error:", heading_difference);
-            SmartDashboard.putNumber("turn power:", turn);
-
-            assignMotorPower(right_speed - turn, left_speed + turn);
-        }
     }
 
     /*

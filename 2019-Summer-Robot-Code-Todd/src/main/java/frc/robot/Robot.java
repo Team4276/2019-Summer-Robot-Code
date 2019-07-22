@@ -11,14 +11,21 @@ import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.Notifier;
+import edu.wpi.first.wpilibj.Joystick;
+
 import frc.systems.DriveSystem;
+import frc.systems.Elevator;
+import frc.systems.ElevatorMMTest;
+import frc.systems.Arm;
+import frc.systems.HatchMech;
+
 import frc.systems.sensors.Cameras;
 import frc.systems.sensors.IMU;
 import frc.systems.sensors.ADIS16448_IMU;
+
 import frc.utilities.RoboRioPorts;
+
 import frc.autonomous.DashboardInterface;
-import frc.systems.Elevator;
-import edu.wpi.first.wpilibj.Joystick;
 
 /**
  * The VM is configured to automatically run this class, and to call the
@@ -31,6 +38,7 @@ public class Robot extends TimedRobot {
   public static Joystick leftJoystick;
   public static Joystick rightJoystick;
   public static Joystick xboxJoystick;
+
   public static Timer systemTimer;
   public static IMU mImu;
   public static ADIS16448_IMU robotIMU;
@@ -50,6 +58,13 @@ public class Robot extends TimedRobot {
 
   Notifier liftRateGroup;
   public static Elevator mElevator;
+  public static ElevatorMMTest mElevatorMM;
+
+  Notifier armRateGroup;
+  public static Arm mArm;
+
+  Notifier hatchRateGroup;
+  public static HatchMech mHatch;
 
   /**
    * This function is run when the robot is first started up and should be used
@@ -76,15 +91,26 @@ public class Robot extends TimedRobot {
         RoboRioPorts.DRIVE_DOUBLE_SOLENOID_FWD, RoboRioPorts.DRIVE_DOUBLE_SOLENOID_REV, RoboRioPorts.DIO_DRIVE_RIGHT_A,
         RoboRioPorts.DIO_DRIVE_RIGHT_B, RoboRioPorts.DIO_DRIVE_LEFT_A, RoboRioPorts.DIO_DRIVE_LEFT_B);
 
-    mElevator = new Elevator(RoboRioPorts.CAN_LIFT_BACK, RoboRioPorts.CAN_LIFT_FRONT, RoboRioPorts.DIVERTER_FWD,
-        RoboRioPorts.DIVERTER_REV, RoboRioPorts.INTAKE_LIM_SWITCH);
+    mElevator = new Elevator(RoboRioPorts.CAN_Elevator_1, RoboRioPorts.CAN_Elevator_2, RoboRioPorts.CAN_Elevator_3,
+        RoboRioPorts.CAN_Elevator_4);
 
+    mElevatorMM = new ElevatorMMTest(RoboRioPorts.CAN_Elevator_1, RoboRioPorts.CAN_Elevator_2, RoboRioPorts.CAN_Elevator_3,
+        RoboRioPorts.CAN_Elevator_4);
+
+    mArm = new Arm(RoboRioPorts.CAN_ARM_RIGHT, RoboRioPorts.CAN_ARM_LEFT);
+
+    mHatch = new HatchMech(RoboRioPorts.HATCH_PISTON_FWD, RoboRioPorts.HATCH_PISTON_REV);
 
     driveRateGroup = new Notifier(mDriveSystem::operatorDrive);
     liftRateGroup = new Notifier(mElevator::performMainProcessing);
-    
+    //liftRateGroup = new Notifier(mElevatorMM::performMainProcessing);
+    hatchRateGroup = new Notifier(mHatch::performMainProcessing);
+    armRateGroup = new Notifier(mArm::performMainProcessing);
+
     driveRateGroup.startPeriodic(0.05);
     liftRateGroup.startPeriodic(0.1);
+    hatchRateGroup.startPeriodic(0.1);
+    armRateGroup.startPeriodic(0.1);
   }
 
   /**
@@ -126,8 +152,8 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void autonomousPeriodic() {
-    //mDriveSystem.rotateCam(4, visionTargetInfo.visionPixelX);
-    
+    // mDriveSystem.rotateCam(4, visionTargetInfo.visionPixelX);
+
   }
 
   /**
@@ -137,7 +163,6 @@ public class Robot extends TimedRobot {
   public void teleopInit() {
     isEnabled = true;
 
-    
     super.teleopInit();
   }
 
@@ -158,6 +183,8 @@ public class Robot extends TimedRobot {
   public void disabledPeriodic() {
     mDriveSystem.updateTelemetry();
     mElevator.updateTelemetry();
+    mArm.updateTelemetry();
+    mHatch.updateTelemetry();
 
     super.disabledPeriodic();
   }
