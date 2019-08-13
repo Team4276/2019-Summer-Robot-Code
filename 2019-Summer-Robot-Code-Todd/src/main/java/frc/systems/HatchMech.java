@@ -20,7 +20,7 @@ public class HatchMech {
     private DoubleSolenoid hatchSolenoid;
     Toggler hatch;
     double activateTime = 0.25;
-    boolean isEjecting = false;
+    public boolean isEjecting = false;
     private final Value kApart = DoubleSolenoid.Value.kReverse;
     private final Value kTogether = DoubleSolenoid.Value.kForward;
 

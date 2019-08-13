@@ -4,19 +4,22 @@ import frc.robot.Robot;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.Timer;
 
-import com.ctre.phoenix.motorcontrol.ControlMode;
-import com.ctre.phoenix.motorcontrol.can.VictorSPX;
-import com.ctre.phoenix.motorcontrol.can.TalonSRX;
+import com.revrobotics.CANSparkMax;
+import com.revrobotics.CANSparkMaxLowLevel.MotorType;
+import com.revrobotics.CANEncoder;
 
 import frc.utilities.Xbox;
 import frc.utilities.Toggler;
+import frc.systems.HatchMech;
 
 public class Elevator extends Thread implements Runnable {
 
-	private TalonSRX elevatorDriverMainR1;
-	private VictorSPX elevatorDriverR2;
-	private VictorSPX elevatorDriverL1;
-	private VictorSPX elevatorDriverL2;
+	HatchMech Hatch;
+
+	CANSparkMax elevatorSpark;
+	CANSparkMax elevatorSparkFollower;
+	CANEncoder m_Encoder;
+
 	private Toggler manualOverrideToggler;
 
 	// Constants - Lower Rail
@@ -61,6 +64,9 @@ public class Elevator extends Thread implements Runnable {
 
 	// General parameters
 	private boolean manualOverrideIsEngaged;
+	private boolean ballMode;
+	private boolean hatchMode;
+
 	private double encoderOffset = 0;
 	private double estimatedHeight = 0;
 	public double commandedHeight = STARTING_HEIGHT;
@@ -80,16 +86,21 @@ public class Elevator extends Thread implements Runnable {
 	private double timePrevious;
 	private double timeStep;
 
-	public Elevator(int elevator1CANPort, int elevator2CANPort, int elevator3CANPort, int elevator4CANPort) {
-		elevatorDriverMainR1 = new TalonSRX(elevator1CANPort);
-		elevatorDriverR2 = new VictorSPX(elevator2CANPort);
-		elevatorDriverL1 = new VictorSPX(elevator3CANPort);
-		elevatorDriverL2 = new VictorSPX(elevator4CANPort);
+	public Elevator(int elevator1CANPort, int elevator2CANPort) {
+		elevatorSpark = new CANSparkMax(elevator1CANPort, MotorType.kBrushless);
+		elevatorSparkFollower = new CANSparkMax(elevator2CANPort, MotorType.kBrushless);
+		m_Encoder = elevatorSpark.getEncoder();
+
 		manualOverrideToggler = new Toggler(Xbox.Start);
+
+		elevatorSpark.restoreFactoryDefaults();
+		elevatorSparkFollower.restoreFactoryDefaults();
+
+		elevatorSparkFollower.follow(elevatorSpark);
 
 		// elevatorDriverFollow.set(ControlMode.Follower, elevator1CANPort);
 		encoderOffset = STARTING_HEIGHT
-				- elevatorDriverMainR1.getSensorCollection().getQuadraturePosition() * HEIGHT_PER_PULSE;
+				- m_Encoder.getVelocity() * HEIGHT_PER_PULSE;
 	}
 
 	private void computeManualPowerOffset() {
@@ -112,57 +123,65 @@ public class Elevator extends Thread implements Runnable {
 
 	private void determineSetpoint() {
 
+		if (Hatch.isEjecting == true) {
+			hatchMode = true;
+			ballMode = false;
+		} else {
+			hatchMode = false;
+			ballMode = true;
+		}
+
 		// button X(Manipulator to Bottom)
 		if (Robot.xboxJoystick.getRawButton(Xbox.POVleft)) {
 			commandedHeight = SETPOINT_BOTTOM;
 		}
 
 		// Setpoints for Cargo
+		if (ballMode) {
+			// button Y(Set manipulator to Rocket top)
+			if (Robot.xboxJoystick.getRawButton(Xbox.Y)) {
+				commandedHeight = SETPOINT_ROCKET_TOP_CARGO;
+			}
 
-		// button Y(Deposit Cube in Scale)
-		if (Robot.xboxJoystick.getRawButton(Xbox.Y)) {
-			commandedHeight = SETPOINT_ROCKET_TOP_CARGO;
+			// button A(Set manipulator to Rocket middle)
+			if (Robot.xboxJoystick.getRawButton(Xbox.B)) {
+				commandedHeight = SETPOINT_ROCKET_MIDDLE_CARGO;
+			}
+
+			// button B(Set manipulator to Rocket bottom)
+			if (Robot.xboxJoystick.getRawButton(Xbox.A)) {
+				commandedHeight = SETPOINT_ROCKET_BOTTOM_CARGO;
+			}
+
+			// button B(Set manipulator to cargo ship)
+			if (Robot.xboxJoystick.getRawButton(Xbox.X)) {
+				commandedHeight = SETPOINT_SHIP_CARGO;
+			}
 		}
-
-		// button A(Deposit Cube in Switch)
-		if (Robot.xboxJoystick.getRawButton(Xbox.B)) {
-			commandedHeight = SETPOINT_ROCKET_MIDDLE_CARGO;
-		}
-
-		// button B(Manipulator to Bottom)
-		if (Robot.xboxJoystick.getRawButton(Xbox.A)) {
-			commandedHeight = SETPOINT_ROCKET_BOTTOM_CARGO;
-		}
-
-		// button B(Manipulator to Bottom)
-		if (Robot.xboxJoystick.getRawButton(Xbox.X)) {
-			commandedHeight = SETPOINT_SHIP_CARGO;
-		}
-
 		// Setpoints for Hatch
+		if (hatchMode) {
+			// button Y(Set manipulator to Rocket Top)
+			if (Robot.xboxJoystick.getRawButton(Xbox.Y)) {
+				commandedHeight = SETPOINT_ROCKET_TOP_HATCH;
+			}
 
-		// button Y(Deposit Cube in Scale)
-		if (Robot.xboxJoystick.getPOV(Xbox.DPad) == Xbox.POVdown) {
-			commandedHeight = SETPOINT_ROCKET_TOP_HATCH;
+			// button A(Set manipulator to Rocket Middle)
+			if (Robot.xboxJoystick.getRawButton(Xbox.B)) {
+				commandedHeight = SETPOINT_ROCKET_MIDDLE_HATCH;
+			}
+
+			// button B(Set manipulator to Hatch Bottom)
+			if (Robot.xboxJoystick.getRawButton(Xbox.A)) {
+				commandedHeight = SETPOINT_ROCKET_BOTTOM_HATCH;
+			}
+
+			// Right Axis Y (Manually Change Setpoint)
+			if (Robot.xboxJoystick.getRawAxis(Xbox.RAxisY) < -0.15) {
+				commandedHeight = commandedHeight + SETPOINT_INCREMENT;
+			} else if (Robot.xboxJoystick.getRawAxis(Xbox.RAxisY) > 0.15) {
+				commandedHeight = commandedHeight - SETPOINT_INCREMENT;
+			}
 		}
-
-		// button A(Deposit Cube in Switch)
-		if (Robot.xboxJoystick.getRawButton(Xbox.POVright)) {
-			commandedHeight = SETPOINT_ROCKET_MIDDLE_HATCH;
-		}
-
-		// button B(Manipulator to Bottom)
-		if (Robot.xboxJoystick.getRawButton(Xbox.POVdown)) {
-			commandedHeight = SETPOINT_ROCKET_BOTTOM_HATCH;
-		}
-
-		// Right Axis Y (Manually Change Setpoint)
-		if (Robot.xboxJoystick.getRawAxis(Xbox.RAxisY) < -0.15) {
-			commandedHeight = commandedHeight + SETPOINT_INCREMENT;
-		} else if (Robot.xboxJoystick.getRawAxis(Xbox.RAxisY) > 0.15) {
-			commandedHeight = commandedHeight - SETPOINT_INCREMENT;
-		}
-
 		// Limit commanded height range
 		if (commandedHeight > MAX_HEIGHT_UPPER) {
 			commandedHeight = MAX_HEIGHT_UPPER;
@@ -174,7 +193,7 @@ public class Elevator extends Thread implements Runnable {
 	private void computeActivePower() {
 		if (initializePID == true) {
 			timeNow = Robot.systemTimer.get();
-			estimatedHeight = elevatorDriverMainR1.getSensorCollection().getQuadraturePosition() * HEIGHT_PER_PULSE
+			estimatedHeight = m_Encoder.getVelocity() * HEIGHT_PER_PULSE
 					+ encoderOffset;
 			heightError = commandedHeight - estimatedHeight;
 			accumulatedError = 0.0;
@@ -183,14 +202,14 @@ public class Elevator extends Thread implements Runnable {
 			heightErrorLast = heightError;
 			timePrevious = timeNow;
 			timeNow = Robot.systemTimer.get();
-			estimatedHeight = elevatorDriverMainR1.getSensorCollection().getQuadraturePosition() * HEIGHT_PER_PULSE
+			estimatedHeight = m_Encoder.getVelocity() * HEIGHT_PER_PULSE
 					+ encoderOffset;
 			timeStep = timeNow - timePrevious;
 
 			// Compute control errors
 			heightError = commandedHeight - estimatedHeight; // height
 			accumulatedError = accumulatedError + (heightErrorLast + heightError) / 2 * timeStep; // height*sec
-			rateError = -elevatorDriverMainR1.getSensorCollection().getQuadratureVelocity() * 10 * HEIGHT_PER_PULSE; // height/sec
+			rateError = - m_Encoder.getVelocity()* 10 * HEIGHT_PER_PULSE; // height/sec
 
 			// For large height errors, follow coast speed until close to target
 			if (heightError > HEIGHT_THRESHOLD) {
@@ -315,22 +334,21 @@ public class Elevator extends Thread implements Runnable {
 				determineSetpoint();
 				computeStaticPower();
 				computeActivePower();
-				commandedPower = staticPower + activePower;				
+				commandedPower = staticPower + activePower;
 			}
 			limitCommandedPower();
-			elevatorDriverMainR1.set(ControlMode.PercentOutput, -commandedPower);
-			elevatorDriverR2.set(ControlMode.PercentOutput, -commandedPower);
+			//elevatorDriverMainR1.set(ControlMode.PercentOutput, -commandedPower);
+			elevatorSpark.set(commandedPower);
 			// negative because facing opposite direction
 			// TODO test all motor directions
-			elevatorDriverL1.set(ControlMode.PercentOutput, commandedPower);
-			elevatorDriverL2.set(ControlMode.PercentOutput, commandedPower);
 			updateTelemetry();
 			Timer.delay(0.0625);
 		}
 	}
 
 	public void updateTelemetry() {
-		SmartDashboard.putNumber("current draw elevator 1", elevatorDriverMainR1.getOutputCurrent());
+		SmartDashboard.putNumber("current draw elevator 1", elevatorSpark.getOutputCurrent());
+		SmartDashboard.putNumber("Elevator Position", m_Encoder.getPosition());
 		// SmartDashboard.putNumber("current draw elevator 2",
 		// elevatorDriverR2.getOutputCurrent());
 		SmartDashboard.putNumber("Commanded arm height", commandedHeight);

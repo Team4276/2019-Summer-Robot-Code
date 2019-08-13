@@ -15,7 +15,7 @@ import edu.wpi.first.wpilibj.Joystick;
 
 import frc.systems.DriveSystem;
 import frc.systems.Elevator;
-import frc.systems.ElevatorMMTest;
+import frc.systems.ElevatorSmartMotion;
 import frc.systems.Arm;
 import frc.systems.HatchMech;
 
@@ -58,7 +58,7 @@ public class Robot extends TimedRobot {
 
   Notifier liftRateGroup;
   public static Elevator mElevator;
-  public static ElevatorMMTest mElevatorMM;
+  public static ElevatorSmartMotion mElSM;
 
   Notifier armRateGroup;
   public static Arm mArm;
@@ -86,31 +86,28 @@ public class Robot extends TimedRobot {
     rightJoystick = new Joystick(1);
     xboxJoystick = new Joystick(2);
 
-    mDriveSystem = new DriveSystem(true, RoboRioPorts.CAN_DRIVE_L1, RoboRioPorts.CAN_DRIVE_L2,
+    /*mDriveSystem = new DriveSystem(true, RoboRioPorts.CAN_DRIVE_L1, RoboRioPorts.CAN_DRIVE_L2,
         RoboRioPorts.CAN_DRIVE_L3, RoboRioPorts.CAN_DRIVE_R1, RoboRioPorts.CAN_DRIVE_R2, RoboRioPorts.CAN_DRIVE_R3,
         RoboRioPorts.DRIVE_DOUBLE_SOLENOID_FWD, RoboRioPorts.DRIVE_DOUBLE_SOLENOID_REV, RoboRioPorts.DIO_DRIVE_RIGHT_A,
         RoboRioPorts.DIO_DRIVE_RIGHT_B, RoboRioPorts.DIO_DRIVE_LEFT_A, RoboRioPorts.DIO_DRIVE_LEFT_B);
-
-    mElevator = new Elevator(RoboRioPorts.CAN_Elevator_1, RoboRioPorts.CAN_Elevator_2, RoboRioPorts.CAN_Elevator_3,
-        RoboRioPorts.CAN_Elevator_4);
-
-    mElevatorMM = new ElevatorMMTest(RoboRioPorts.CAN_Elevator_1, RoboRioPorts.CAN_Elevator_2, RoboRioPorts.CAN_Elevator_3,
-        RoboRioPorts.CAN_Elevator_4);
-
-    mArm = new Arm(RoboRioPorts.CAN_ARM_RIGHT, RoboRioPorts.CAN_ARM_LEFT);
+*/
+    //mElevator = new Elevator(RoboRioPorts.CAN_Elevator_1, RoboRioPorts.CAN_Elevator_2);
+    mElSM = new ElevatorSmartMotion(RoboRioPorts.CAN_Elevator_1, RoboRioPorts.CAN_Elevator_2);
+/*
+    mArm = new Arm(RoboRioPorts.CAN_ARM_RIGHT, RoboRioPorts.CAN_ARM_LEFT, RoboRioPorts.ARM_FWD, RoboRioPorts.ARM_REV);
 
     mHatch = new HatchMech(RoboRioPorts.HATCH_PISTON_FWD, RoboRioPorts.HATCH_PISTON_REV);
-
-    driveRateGroup = new Notifier(mDriveSystem::operatorDrive);
-    liftRateGroup = new Notifier(mElevator::performMainProcessing);
+*/
+    //driveRateGroup = new Notifier(mDriveSystem::operatorDrive);
+    liftRateGroup = new Notifier(mElSM::performMainProcessing);
     //liftRateGroup = new Notifier(mElevatorMM::performMainProcessing);
-    hatchRateGroup = new Notifier(mHatch::performMainProcessing);
-    armRateGroup = new Notifier(mArm::performMainProcessing);
+   // hatchRateGroup = new Notifier(mHatch::performMainProcessing);
+    //armRateGroup = new Notifier(mArm::performMainProcessing);
 
-    driveRateGroup.startPeriodic(0.05);
+    //driveRateGroup.startPeriodic(0.05);
     liftRateGroup.startPeriodic(0.1);
-    hatchRateGroup.startPeriodic(0.1);
-    armRateGroup.startPeriodic(0.1);
+    //hatchRateGroup.startPeriodic(0.1);
+   // armRateGroup.startPeriodic(0.1);
   }
 
   /**
@@ -144,7 +141,7 @@ public class Robot extends TimedRobot {
   public void autonomousInit() {
 
     robotCameraSystem.mainCamera.setExposureHoldCurrent();
-    mDriveSystem.methodInit = true;
+    //mDriveSystem.methodInit = true;
   }
 
   /**
@@ -181,10 +178,10 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void disabledPeriodic() {
-    mDriveSystem.updateTelemetry();
+    //mDriveSystem.updateTelemetry();
     mElevator.updateTelemetry();
-    mArm.updateTelemetry();
-    mHatch.updateTelemetry();
+    //mArm.updateTelemetry();
+    //mHatch.updateTelemetry();
 
     super.disabledPeriodic();
   }

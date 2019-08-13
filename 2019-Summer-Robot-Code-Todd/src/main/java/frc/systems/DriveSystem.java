@@ -135,7 +135,6 @@ public class DriveSystem {
             frDriveX.set(ControlMode.PercentOutput, rightPow);
             mrDriveX.set(ControlMode.PercentOutput, rightPow);
             brDriveX.set(ControlMode.PercentOutput, rightPow);
-
         } else {
             flDrive.set(leftPow);
             mlDrive.set(leftPow);
@@ -215,7 +214,7 @@ public class DriveSystem {
                 zRotation = Math.pow(Robot.leftJoystick.getX(), 3);
             }
 
-            if (Robot.rightJoystick.getRawButton(5)) {
+            if (Robot.rightJoystick.getRawButton(2)) {
                 isQuickTurn = true;
             } else {
                 isQuickTurn = false;
